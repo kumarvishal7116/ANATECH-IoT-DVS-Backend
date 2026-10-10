@@ -32,7 +32,8 @@ const allowedFilterNames = new Set([
     ...Object.keys(dateFilters).flatMap((name) => [`${name}_from`, `${name}_to`]),
     "order_qty",
     "order_qty_min",
-    "order_qty_max"
+    "order_qty_max",
+    "urn"
 ]);
 
 const filterAliases = {
@@ -52,7 +53,8 @@ const filterAliases = {
     expectedDispatchDateTo: "expected_dispatch_date_to",
     orderQty: "order_qty",
     orderQtyMin: "order_qty_min",
-    orderQtyMax: "order_qty_max"
+    orderQtyMax: "order_qty_max",
+    URN: "urn"
 };
 
 function normalizeFilterNames(query) {
@@ -202,6 +204,13 @@ function buildOrderQuery(query) {
         throw new OrderFilterValidationError(
             "order_qty_min must not be greater than order_qty_max."
         );
+    }
+
+    const urn = readFilter(normalizedQuery, "urn");
+
+    if (urn !== undefined) {
+        conditions.push("`URN` = ?");
+        values.push(parseInteger(urn, "urn"));
     }
 
     const whereClause = conditions.length > 0
