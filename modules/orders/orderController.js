@@ -6,6 +6,10 @@
  */
 
 const pool = require("../../config/db");
+const {
+    buildOrderQuery,
+    OrderFilterValidationError
+} = require("./orderQueryBuilder");
 
 // POST /api/orders
 // Accepts form data and inserts a new record into Order_Tracking_Data.
@@ -87,12 +91,11 @@ const submitOrder = async (req, res) => {
 };
 
 // GET /api/orders
-// Fetches all records from Order_Tracking_Data.
+// Fetches matching records from Order_Tracking_Data, or all records without filters.
 const getOrders = async (req, res) => {
     try {
-        const [rows] = await pool.execute(
-            `SELECT * FROM \`Order_Tracking_Data\` ORDER BY id DESC`
-        );
+        const { sql, values } = buildOrderQuery(req.query);
+        const [rows] = await pool.execute(sql, values);
 
         return res.status(200).json({
             success: true,
@@ -100,6 +103,13 @@ const getOrders = async (req, res) => {
         });
 
     } catch (error) {
+        if (error instanceof OrderFilterValidationError) {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         console.error("Fetch orders error:", error.message);
 
         return res.status(500).json({

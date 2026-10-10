@@ -13,7 +13,7 @@ const router = express.Router();
 // POST /api/orders  — submit new order form data.
 router.post("/", submitOrder);
 
-// GET /api/orders   — fetch all order tracking records.
+// GET /api/orders   — fetch order tracking records, with optional filters.
 router.get("/", getOrders);
 
 module.exports = router;
