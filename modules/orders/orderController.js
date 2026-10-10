@@ -150,6 +150,14 @@ const getOrders = async (req, res) => {
         const { sql, values } = buildOrderQuery(req.query);
         const [rows] = await pool.execute(sql, values);
 
+        if (rows.length === 0) {
+            return res.status(200).json({
+                success: true,
+                message: "No matching orders found.",
+                data: []
+            });
+        }
+
         return res.status(200).json({
             success: true,
             data: rows

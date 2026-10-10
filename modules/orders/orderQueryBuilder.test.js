@@ -31,6 +31,20 @@ test("ignores empty filters and matches text as a literal substring", () => {
     assert.deepEqual(result.values, ["%navy\\%\\_blue%"]);
 });
 
+test("rejects unrecognized filter names instead of querying all orders", () => {
+    assert.throws(
+        () => buildOrderQuery({ buyer: "ACME" }),
+        /Unknown filter "buyer"/
+    );
+});
+
+test("accepts camelCase filter names without dropping the filter", () => {
+    const result = buildOrderQuery({ buyerCode: "ACME" });
+
+    assert.match(result.sql, /WHERE `Buyer Code` LIKE \?/);
+    assert.deepEqual(result.values, ["%ACME%"]);
+});
+
 test("combines exact, date-range, and quantity-range filters", () => {
     const result = buildOrderQuery({
         buyer_code: "ACME",

@@ -26,6 +26,53 @@ const dateFilters = {
     expected_dispatch_date: "`Expected Dispatch Date`"
 };
 
+const allowedFilterNames = new Set([
+    ...Object.keys(textFilters),
+    ...Object.keys(dateFilters),
+    ...Object.keys(dateFilters).flatMap((name) => [`${name}_from`, `${name}_to`]),
+    "order_qty",
+    "order_qty_min",
+    "order_qty_max"
+]);
+
+const filterAliases = {
+    buyerCode: "buyer_code",
+    styleCodeName: "style_code_name",
+    yarnColour: "yarn_colour",
+    woolGradeMicron: "wool_grade_micron",
+    productNameStyleDescription: "product_name_style_description",
+    orderReceivedDate: "order_received_date",
+    orderReceivedDateFrom: "order_received_date_from",
+    orderReceivedDateTo: "order_received_date_to",
+    productionStartDate: "production_start_date",
+    productionStartDateFrom: "production_start_date_from",
+    productionStartDateTo: "production_start_date_to",
+    expectedDispatchDate: "expected_dispatch_date",
+    expectedDispatchDateFrom: "expected_dispatch_date_from",
+    expectedDispatchDateTo: "expected_dispatch_date_to",
+    orderQty: "order_qty",
+    orderQtyMin: "order_qty_min",
+    orderQtyMax: "order_qty_max"
+};
+
+function normalizeFilterNames(query) {
+    const normalizedQuery = {};
+
+    for (const [name, value] of Object.entries(query)) {
+        const normalizedName = filterAliases[name] || name;
+
+        if (Object.hasOwn(normalizedQuery, normalizedName)) {
+            throw new OrderFilterValidationError(
+                `Filter "${normalizedName}" was provided more than once.`
+            );
+        }
+
+        normalizedQuery[normalizedName] = value;
+    }
+
+    return normalizedQuery;
+}
+
 function readFilter(query, name) {
     const value = query[name];
 
@@ -79,11 +126,21 @@ function parseInteger(value, name) {
 }
 
 function buildOrderQuery(query) {
+    const normalizedQuery = normalizeFilterNames(query);
+
+    for (const name of Object.keys(normalizedQuery)) {
+        if (!allowedFilterNames.has(name)) {
+            throw new OrderFilterValidationError(
+                `Unknown filter "${name}". Check the supported filter parameter names.`
+            );
+        }
+    }
+
     const conditions = [];
     const values = [];
 
     for (const [filterName, columnName] of Object.entries(textFilters)) {
-        const value = readFilter(query, filterName);
+        const value = readFilter(normalizedQuery, filterName);
 
         if (value !== undefined) {
             conditions.push(`${columnName} LIKE ?`);
@@ -92,9 +149,9 @@ function buildOrderQuery(query) {
     }
 
     for (const [filterName, columnName] of Object.entries(dateFilters)) {
-        const exactValue = readFilter(query, filterName);
-        const fromValue = readFilter(query, `${filterName}_from`);
-        const toValue = readFilter(query, `${filterName}_to`);
+        const exactValue = readFilter(normalizedQuery, filterName);
+        const fromValue = readFilter(normalizedQuery, `${filterName}_from`);
+        const toValue = readFilter(normalizedQuery, `${filterName}_to`);
 
         if (exactValue !== undefined) {
             conditions.push(`${columnName} = ?`);
@@ -118,9 +175,9 @@ function buildOrderQuery(query) {
         }
     }
 
-    const orderQty = readFilter(query, "order_qty");
-    const minOrderQty = readFilter(query, "order_qty_min");
-    const maxOrderQty = readFilter(query, "order_qty_max");
+    const orderQty = readFilter(normalizedQuery, "order_qty");
+    const minOrderQty = readFilter(normalizedQuery, "order_qty_min");
+    const maxOrderQty = readFilter(normalizedQuery, "order_qty_max");
 
     if (orderQty !== undefined) {
         conditions.push("`Order Qty` = ?");
