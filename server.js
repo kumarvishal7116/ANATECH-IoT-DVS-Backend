@@ -18,9 +18,7 @@ const allowedOrigins = new Set([
     "http://localhost:5174",
     ...[process.env.FRONTEND_URL, process.env.CORS_ORIGINS]
         .filter(Boolean)
-        .join(",")
-        .split(",")
-        .map((origin) => origin.trim())
+        .flatMap((entry) => entry.split(",").map((origin) => origin.trim()))
         .filter(Boolean)
 ]);
 
@@ -39,7 +37,13 @@ app.use((req, res, next) => {
     }
 
     if (req.method === "OPTIONS") {
-        return res.sendStatus(204);
+        // Only approve the preflight if the origin is actually allowed.
+        // Returning 204 with no CORS headers confuses browsers into thinking
+        // the preflight passed when it hasn't.
+        if (origin && allowedOrigins.has(origin)) {
+            return res.sendStatus(204);
+        }
+        return res.sendStatus(403);
     }
 
     return next();
