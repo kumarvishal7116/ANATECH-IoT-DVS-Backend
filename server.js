@@ -13,12 +13,14 @@ const orderRoutes = require("./modules/orders/orderRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const allowedOrigins = new Set(
-    (process.env.CORS_ORIGINS || "http://localhost:5174")
+const allowedOrigins = new Set([
+    "http://localhost:5173",
+    "http://localhost:5174",
+    ...(process.env.CORS_ORIGINS || "")
         .split(",")
         .map((origin) => origin.trim())
         .filter(Boolean)
-);
+]);
 
 app.use((req, res, next) => {
     const origin = req.headers.origin;
