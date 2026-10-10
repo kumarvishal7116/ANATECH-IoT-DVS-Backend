@@ -11,9 +11,14 @@ const {
     OrderFilterValidationError
 } = require("./orderQueryBuilder");
 
+const ORDER_URN_LOCK_NAME = "order_tracking_data_urn";
+
 // POST /api/orders
 // Accepts form data and inserts a new record into Order_Tracking_Data.
 const submitOrder = async (req, res) => {
+    let connection;
+    let urnLockAcquired = false;
+
     try {
         const {
             order_received_date,
@@ -42,23 +47,6 @@ const submitOrder = async (req, res) => {
             });
         }
 
-        const sql = `
-            INSERT INTO \`Order_Tracking_Data\`
-            (
-                \`Order Received Date\`,
-                \`Buyer Code\`,
-                \`Style Code/ Name\`,
-                \`Colour\`,
-                \`Which colour of yarn should be used\`,
-                \`Wool Grade/ Micron\`,
-                \`Product name or Style Description\`,
-                \`Order Qty\`,
-                \`Production Start Date\`,
-                \`Expected Dispatch Date\`
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-
         const values = [
             order_received_date,
             buyer_code || null,
@@ -72,7 +60,46 @@ const submitOrder = async (req, res) => {
             expected_dispatch_date
         ];
 
-        const [result] = await pool.execute(sql, values);
+        connection = await pool.getConnection();
+
+        const [lockRows] = await connection.execute(
+            "SELECT GET_LOCK(?, 10) AS lock_acquired",
+            [ORDER_URN_LOCK_NAME]
+        );
+
+        if (!lockRows[0] || lockRows[0].lock_acquired !== 1) {
+            const error = new Error("Timed out waiting to generate the next order URN.");
+            error.code = "ORDER_URN_LOCK_TIMEOUT";
+            throw error;
+        }
+
+        urnLockAcquired = true;
+
+        const [urnRows] = await connection.execute(
+            "SELECT GREATEST(COALESCE(MAX(CAST(`URN` AS UNSIGNED)), 999), 999) + 1 AS next_urn FROM `Order_Tracking_Data`"
+        );
+        const urn = urnRows[0].next_urn;
+
+        const [result] = await connection.execute(
+            `
+                INSERT INTO \`Order_Tracking_Data\`
+                (
+                    \`Order Received Date\`,
+                    \`Buyer Code\`,
+                    \`Style Code/ Name\`,
+                    \`Colour\`,
+                    \`Which colour of yarn should be used\`,
+                    \`Wool Grade/ Micron\`,
+                    \`Product name or Style Description\`,
+                    \`Order Qty\`,
+                    \`Production Start Date\`,
+                    \`Expected Dispatch Date\`,
+                    \`URN\`
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+            [...values, urn]
+        );
 
         return res.status(201).json({
             success: true,
@@ -83,10 +110,36 @@ const submitOrder = async (req, res) => {
     } catch (error) {
         console.error("Submit order error:", error.message);
 
+        if (error.code === "ORDER_URN_LOCK_TIMEOUT") {
+            return res.status(503).json({
+                success: false,
+                message: "Could not generate an order URN. Please retry."
+            });
+        }
+
         return res.status(500).json({
             success: false,
             message: "Internal server error."
         });
+    } finally {
+        if (connection) {
+            if (urnLockAcquired) {
+                try {
+                    const [releaseRows] = await connection.execute(
+                        "SELECT RELEASE_LOCK(?) AS lock_released",
+                        [ORDER_URN_LOCK_NAME]
+                    );
+
+                    if (!releaseRows[0] || releaseRows[0].lock_released !== 1) {
+                        console.error("Order URN lock was not released by the database.");
+                    }
+                } catch (error) {
+                    console.error("Failed to release order URN lock:", error.message);
+                }
+            }
+
+            connection.release();
+        }
     }
 };
 
